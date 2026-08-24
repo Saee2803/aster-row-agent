@@ -1,239 +1,371 @@
-# AI Agent Intern Take-Home: Build a Reliable RAG Support Agent
+# Aster & Row — Reliable RAG Support Agent
 
-## The assignment
+A ground-truth-first customer support agent for the fictional ecommerce company
+**Aster & Row** (bags, drinkware, travel accessories). It answers policy and
+product questions from the supplied Markdown knowledge base, looks up order
+status through a strict tool boundary, keeps multi-turn context, refuses
+unsafe instructions, and says "I don't know" (with a human handoff) whenever
+the data does not support an answer.
 
-Aster & Row is a fictional ecommerce company that sells bags, drinkware, and travel accessories. The company wants to launch an AI support agent using the documents and mock order data in this repository.
+The default responder is a **deterministic grounded composer**: answers are
+assembled from retrieved evidence sentences, never generated prose. An
+optional LLM layer can rephrase the already-grounded answer, but tool calls,
+document precedence, conflict detection, and abstention always stay in code.
 
-This repository intentionally contains **only content and data**. There is no starter application and no prescribed stack. Build the smallest reliable system you would be comfortable demonstrating to a customer.
-
-## Timebox
-
-Please spend **6–8 hours** on the assignment. Do not exceed eight hours.
-
-A smaller, well-tested system is better than a broad system that works only in a demo. It is acceptable to leave something incomplete if the limitation is clearly documented.
-
-## Submission
-
-Submit **one GitHub repository link**. Nothing else is required.
-
-Your repository must contain:
-
-- Your application source code.
-- Your tests and evaluation suite.
-- Clear setup and run instructions.
-- Evaluation results and known limitations in the README.
-- A short GIF or video embedded in the README showing the agent working.
-
-Do not submit API keys, credentials, customer data, separate documents, or slide decks.
+![Demo](docs/demo.gif)
 
 ---
 
-## Customer scenario
+## Quick start (clean clone)
 
-Aster & Row has previously tried several AI support prototypes. The customer reported four recurring problems:
+Requirements: **Python 3.11+** (developed on 3.13). No API key is needed —
+the agent runs fully offline.
 
-1. **Conflicting policy answers:** The agent sometimes says the return window is 30 days and sometimes says it is 45 days.
-2. **Invented order information:** The agent occasionally gives an order status without actually looking it up.
-3. **Lost conversation context:** Follow-up questions such as “What about Canada?” are treated as unrelated questions.
-4. **Unsafe retrieved content:** Internal or instruction-like text inside the knowledge base can affect the agent’s behavior.
+```bash
+git clone <this-repo> aster-row-agent
+cd aster-row-agent
+python -m venv .venv
 
-The supplied corpus contains realistic data-quality problems, including superseded content, internal notes, conflicting active sources, and fields that must not be shown to customers.
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+# source .venv/bin/activate
 
-Your task is to build an agent that handles these conditions deliberately rather than succeeding only on ideal questions.
+pip install pytest          # only dependency: the test runner
+python -m pytest tests -q   # 78 regression tests, should all pass
+python cli.py               # start chatting
+```
 
----
+Useful CLI flags and commands:
 
-# Required capabilities
+```bash
+python cli.py --debug        # print sanitized traces after every turn
+python cli.py --session s1   # explicit session id
+```
 
-## 1. Retrieval-Augmented Generation
+Inside the chat: `/debug` toggles traces, `/new` starts a fresh session,
+`/quit` exits.
 
-Use RAG over the Markdown files in `knowledge-base/`.
+### Web UI
 
-Your implementation must:
+A browser interface backed by the same agent is included — no extra
+dependencies, no build step:
 
-- Split and index the supplied documents.
-- Preserve useful metadata from the document front matter.
-- Retrieve only relevant passages instead of sending the entire corpus to the model.
-- Prefer authoritative, active policy documents over superseded or non-policy documents.
-- Include source references in every policy or product answer. A source should identify at least the filename and relevant heading.
-- Avoid making claims that are not supported by the retrieved content.
-- Clearly say when the supplied information is insufficient.
-- Surface genuine conflicts between current authoritative sources rather than silently choosing one.
+```bash
+python web/server.py            # http://127.0.0.1:8000
+python web/server.py --port 8080
+```
 
-Do not delete or rewrite the supplied source files to make the assignment easier. You may create derived indexes or normalized representations.
+Architecture: `Browser → stdlib HTTP server (web/server.py) → SupportAgent`.
+The server adds nothing to answers — it only serializes what the agent
+returns (answer, sources, conflict/handoff flags, the order tool's own
+sanitized result, sanitized debug traces). The frontend (`web/static/`,
+vanilla HTML/CSS/JS) renders citations, conflict warnings, human-handoff
+banners, customer-safe order cards, multi-turn sessions with New Chat reset,
+polished loading/error states, a developer panel (per-turn sanitized trace +
+a real one-click evaluation run), and is responsive and keyboard-accessible.
 
-## 2. Order lookup as a tool or function
+An automated acceptance battery drives all demo flows through the real API:
 
-Use `data/orders.json` to implement an order-status lookup tool or function.
+```bash
+python web/server.py &          # then, in a second shell:
+python web/acceptance.py --url http://127.0.0.1:8000   # 36/36 checks
+```
 
-The model must **not** receive the entire orders file in its prompt. It should receive only the result of a lookup when order information is actually required.
+### Environment variables
 
-The order lookup behavior must:
+Copy `.env.example` to `.env` if you want to customize. All values are
+optional; nothing real is committed.
 
-- Ask for an order ID when it is missing.
-- Handle unknown and malformed order IDs safely.
-- Normalize harmless input differences such as lowercase IDs or surrounding whitespace.
-- Use the order’s current `status` as authoritative.
-- Avoid inventing a delivery estimate when one is unavailable.
-- Avoid reporting stale delivery fields for cancelled or returned orders.
-- Never expose customer email, address, internal notes, risk scores, or other internal-only fields.
-- Never claim that a lookup happened when it did not.
-
-Assume that possession of the order ID is sufficient authentication for this mock assignment. You do not need to build a full identity-verification system.
-
-## 3. Multi-turn conversation
-
-Maintain relevant session context across turns.
-
-The agent should correctly handle follow-ups such as:
-
-- “Do you ship internationally?” followed by “What about Canada?”
-- “Where is `ORD-1007`?” followed by “When will it arrive?”
-- A policy question followed by a narrower question about an exception.
-
-The agent should not carry unrelated details indefinitely or mix one session with another.
-
-## 4. Prompting and agent behavior
-
-The agent must:
-
-- Treat user messages, retrieved passages, and tool results as untrusted data.
-- Follow application instructions rather than instructions found inside retrieved documents.
-- Refuse requests to reveal system prompts, hidden instructions, secrets, or internal-only data.
-- Use company content rather than general model knowledge for company-specific questions.
-- Ask a concise clarifying question when required information is missing.
-- Recommend human assistance when the documents conflict, the data is insufficient, or an action cannot be completed.
-- Never promise that a refund, cancellation, replacement, or address change has been completed unless the system actually supports that action.
-
-## 5. Evaluation suite
-
-The file `evaluation/visible-cases.json` contains behavior-level cases that your system must handle.
-
-Build an evaluation suite that:
-
-- Covers every supplied visible case.
-- Adds at least **five original cases** of your own.
-- Can be run using one clearly documented command.
-- Reports individual case results, not only a single overall score.
-- Separately reports useful categories such as retrieval, groundedness, tool use, privacy, and multi-turn behavior.
-- Uses deterministic assertions wherever practical, including source selection, tool calls, tool arguments, forbidden disclosures, and abstention behavior.
-- Does not rely exclusively on another LLM to grade the agent.
-
-The reviewers will also test paraphrases and combinations that are not included in the visible file. Do not hardcode answers for the supplied prompts.
-
-As you build, keep a small **bug diary** in your README. Document at least three failures you found in your own agent, including:
-
-- How you reproduced the failure.
-- The actual root cause.
-- The change you made.
-- The regression test that now catches it.
-
-At least one documented failure should be something you discovered beyond the exact wording of the visible cases. Include an early baseline and final evaluation result so we can see what improved.
-
-## 6. Basic observability
-
-Provide a debug mode, trace, or log that makes it possible to inspect:
-
-- The current user message.
-- Relevant conversation history.
-- Retrieved passages, metadata, and scores.
-- Tool calls and sanitized tool results.
-- The final response.
-- Errors, fallbacks, or handoffs.
-
-Plain structured logs are sufficient. Do not build a dashboard. Never log secrets.
-
-## 7. Minimal interface
-
-A CLI, simple web page, or basic API is sufficient. Visual polish will not affect the score.
-
-The final user-facing response should make it easy to see:
-
-- The answer.
-- Sources, when applicable.
-- Whether the agent is recommending a human handoff.
+| Variable | Default | Purpose |
+|---|---|---|
+| `AGENT_PROFILE` | `full` | `full` = precedence + conflict detection + context resolution; `naive` = baseline profile used for the baseline evaluation below |
+| `LLM_API_KEY` | *(empty)* | Enables LLM phrasing when set together with the two vars below |
+| `LLM_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible `/chat/completions` endpoint |
+| `LLM_MODEL` | `gpt-4o-mini` | Model used for phrasing only |
+| `LLM_TIMEOUT_SECONDS` | `45` | Phrasing call timeout; on failure the deterministic answer is returned |
+| `AGENT_DEBUG` | `0` | `1` = same as `--debug` |
 
 ---
 
-# README requirements
+## Design choices
 
-Your completed repository README must include:
-
-1. Setup and run instructions that work from a clean clone.
-2. Required environment variables and an `.env.example` without real credentials.
-3. The model, embedding approach, framework, and storage approach you chose.
-4. A short architecture explanation.
-5. The command for running evaluations.
-6. Baseline and final evaluation results, broken down by category.
-7. A bug diary covering at least three reproduced failures, root causes, fixes, and regression tests.
-8. Known limitations and what you would improve before production.
-9. Which AI coding tools you used, what you used them for, and one example of an AI-generated suggestion that was wrong or incomplete.
-10. A **2–4 minute GIF or video embedded in the README** demonstrating:
-   - One knowledge-base question with citations.
-   - One order lookup.
-   - One multi-turn conversation.
-   - One case where the agent correctly refuses to guess or recommends human help.
-   - The evaluation suite running.
-
-GitHub does not play uploaded video files inline in every context. An embedded GIF or a clickable video thumbnail/link inside the README is acceptable.
+| Concern | Choice | Why |
+|---|---|---|
+| Model | Deterministic grounded composer (default); optional OpenAI-compatible LLM for phrasing via stdlib `urllib` | Reliability first: every claim is selected from retrieved evidence. The LLM can only rephrase text that was already grounded |
+| Embeddings / retrieval | Local TF-IDF over section chunks with cosine similarity, plus suffix normalization (`ships → ship`) and alias canonicalization (`canadian → canada`) | Zero infrastructure, reproducible scores, good enough for a 14-document corpus; precedence filtering matters more than recall here |
+| Framework | Python standard library only | Fewer moving parts; every behavior is inspectable and testable |
+| Storage | In-memory index built at startup from `knowledge-base/`; sessions in memory keyed by session id | Corpus is tiny and static; no DB to deploy |
 
 ---
 
-# What not to spend time on
+## Architecture
 
-You do not need to build:
+```
+                ┌────────────────────────────────────────────────┐
+ user turn ───▶ │ Session Manager (per-session state, isolation) │
+                └───────────────┬────────────────────────────────┘
+                                ▼
+                ┌────────────────────────────────────────────────┐
+                │ Orchestrator (SupportAgent)                    │
+                │  intent routing → smalltalk / KB / order /     │
+                │  privacy / action / injection refusal          │
+                └───┬───────────────┬───────────────┬────────────┘
+                    ▼               ▼               ▼
+      ┌───────────────────┐ ┌──────────────┐ ┌────────────────────┐
+      │ RAG Retriever     │ │ Order Lookup │ │ Safety resolvers   │
+      │ TF-IDF top-k pool │ │ Tool         │ │ privacy, prompt-   │
+      │ → precedence gate │ │ normalize ID │ │ injection, actions │
+      │ (active > legacy/ │ │ whitelist    │ │ (refuse or ask)    │
+      │  draft/internal), │ │ stale-field  │ └────────────────────┘
+      │ conflict detector,│ │ suppression, │
+      │ sufficiency check │ │ redaction    │
+      └─────────┬─────────┘ └──────┬───────┘
+                ▼                  ▼
+      ┌────────────────────────────────────────────────┐
+      │ Grounded Composer                              │
+      │ evidence sentences → answer (+ conflict note,  │
+      │ clarifying question, or handoff recommendation)│
+      │ [optional: LLM rephrases the grounded draft]   │
+      └─────────┬──────────────────────────────────────┘
+                ▼
+      Answer + Sources (file · heading · document_id)
+      + handoff flag        + sanitized debug trace
+```
 
-- Authentication or user management.
-- Production deployment infrastructure.
-- A production vector database.
-- Fine-tuning.
-- A polished frontend.
-- Multiple model-provider integrations.
-- Billing, analytics dashboards, or administration screens.
+Key mechanisms:
+
+- **Authority ≠ relevance.** Retrieval ranks by similarity, then
+  `agent/precedence.py` filters the pool: drafts/archived/internal notes are
+  dropped, superseded documents are shadowed by their successors
+  (RET-2024-01 → RET-2026-01), customer-service-facing docs outrank
+  ops-facing ones, and no more than 3 chunks come from one document.
+- **Conflicts are surfaced, not hidden.** When two *current authoritative*
+  sources disagree (the Breeze Tumbler care conflict:
+  CARE-2026-01 vs PROD-BREEZE-20; or return-window divergence between
+  RET-2026-01 / MEM-2026-01), both sides are quoted with citations and the
+  agent recommends human confirmation.
+- **Order data crosses one choke point.** The model never sees
+  `orders.json`. `agent/orders.py` normalizes IDs (`ord-1007 `, `ORD1007`),
+  validates format, returns a whitelisted field set only, suppresses
+  carrier/tracking/ETA fields for cancelled/returned orders, and strips all
+  internal-only fields (email, address, risk_score, internal notes).
+- **Untrusted content stays data.** Retrieved passages and tool results are
+  never executed as instructions; direct attempts to reveal the system prompt
+  or secrets are refused; requests for other customers' data are declined.
+- **Fail closed.** Insufficient evidence → explicit abstention + handoff.
+  Unfulfillable actions (refunds, cancellations, address changes) are never
+  promised; the agent explains what it *cannot* do and recommends a human.
 
 ---
 
-# Evaluation criteria
+## Running evaluations
 
-| Area | Weight |
-|---|---:|
-| Reliability, groundedness, and safe abstention | 25% |
-| Retrieval quality and document precedence | 20% |
-| Tool use, data handling, and privacy | 15% |
-| Evaluation quality and regression coverage | 20% |
-| Multi-turn behavior and observability | 10% |
-| Code clarity and practical tradeoffs | 5% |
-| README, demo, and customer-facing clarity | 5% |
+One command runs all 29 cases (15 supplied visible cases + 14 original):
 
-Framework choice and quantity of code are not scoring criteria.
+```bash
+python -m evaluation.run                 # final profile (full)
+python -m evaluation.run --profile naive # reproduce the honest baseline
+python -m evaluation.run --only canada-multiturn --verbose  # single case
+python -m evaluation.run --out evaluation/results/final.json
+```
+
+Assertions are deterministic (regex/concept checks over answers, sources,
+tool calls, forbidden disclosures, abstention flags) — no LLM-as-judge.
+Results are reported per case and per category.
+
+### Results: baseline vs final
+
+Baseline = same code with `AGENT_PROFILE=naive` (retrieval-only responder:
+no precedence gating, no conflict detection, no follow-up resolution).
+Final = default `full` profile.
+
+| Category | Baseline (naive) | Final (full) |
+|---|---|---|
+| Action safety | 2/2 | 2/2 |
+| Groundedness | 1/5 | **5/5** |
+| Multi-turn | 1/3 | **3/3** |
+| Privacy | 2/2 | 2/2 |
+| Prompt-injection safety | 2/3 | **3/3** |
+| Retrieval & precedence | 0/2 | **2/2** |
+| Safe abstention | 0/2 | **2/2** |
+| Source precedence & conflict | 0/2 | **2/2** |
+| Tool reliability | 5/5 | 5/5 |
+| Tool use | 3/3 | 3/3 |
+| **Overall** | **16/29 (55%)** | **29/29 (100%)** |
+
+Full per-case output: `evaluation/results/baseline.json` and
+`evaluation/results/final.json`.
 
 ---
 
-# Repository contents
+## Bug diary
+
+Six real failures found while building (and probing beyond the visible case
+wording). Each is pinned by a regression test.
+
+### 1. Chunker corrupted citation headings
+- **Reproduction:** asked about return shipping conditions; the cited heading
+  rendered as a mash-up like *"Standard return window > Item condition >
+  Return shipping"* — three headings glued into one chunk lineage.
+- **Root cause:** an early chunker merged short adjacent sections to hit a
+  minimum-size target, which destroyed heading provenance.
+- **Fix:** chunks are atomic per `##` section; the document H1 is kept as
+  root context; no cross-section merging.
+- **Regression test:** `tests/test_retrieval_precedence.py` asserts chunk
+  headings exactly match sections of the source outline.
+
+### 2. Conflict detector false-fired on unrelated day-counts
+- **Reproduction:** a question about damaged items claimed the returns
+  policy "conflicts" because OPS-2026-04 has a *7-day damage reporting*
+  window; TrailPlus membership text also triggered it via delegation.
+- **Root cause:** the rule compared any two "N days" numbers across
+  documents instead of restricting to actual return-window statements.
+- **Fix:** the generic window-divergence rule only considers documents whose
+  IDs can state return windows (`RET-2026-01`, `RET-2024-01`,
+  `MEM-2026-01`), and texts that merely *defer* to the returns policy carry
+  delegation markers that opt them out.
+- **Regression test:** `tests/test_conflicts_groundedness.py`.
+
+### 3. Retrieval missed international shipping ("internationally", "Canada")
+- **Reproduction:** *"Do you ship internationally?"* ranked doc 06 too low;
+  *"What about Canada?"* found nothing.
+- **Root cause:** plain tokenization — `international` vs `internationally`,
+  `ship` vs `ships`, `canadian` vs `canada` never matched index terms.
+- **Fix:** suffix normalization plus an alias map in `agent/indexing.py`
+  tokenization.
+- **Regression test:** `tests/test_retrieval_precedence.py`.
+
+### 4. Log redaction clobbered its own metadata
+- **Reproduction:** with `--debug`, after any order lookup the trace showed
+  the tool name itself redacted: `{"name": "[REDACTED]"}` — traces useless.
+- **Root cause:** the sensitive-key list included bare `"name"`; tool-call
+  descriptors legitimately use `"name"`.
+- **Fix:** removed bare `"name"`; redaction targets `"customer"` subtrees
+  and specific keys (email, address, risk_score, internal notes, tokens…).
+- **Regression test:** `tests/test_observability.py`.
+
+### 5. Mixed questions routed as pure order lookups
+- **Reproduction (beyond visible wording):** *"What is my return policy for
+  ORD-1009?"* answered only with delivery status; the policy half vanished.
+- **Root cause:** intent routing treated any message containing an order ID
+  as a lookup-only turn.
+- **Fix:** mixed-flow detection routes the message through both the KB flow
+  and the order flow when policy keywords co-occur with an ID.
+- **Regression test:** `tests/test_multiturn.py`.
+
+### 6. Return-window math applied to already-returned orders
+- **Reproduction:** *"Can I return ORD-1008?"* computed days-since-delivery
+  eligibility even though the order status is `returned`.
+- **Root cause:** the eligibility composer assumed an active delivered
+  order; status precedence existed for stale fields but not here.
+- **Fix:** status-first branches: `returned` → "already returned",
+  `cancelled` → cancellation path, pending/processing → not yet eligible.
+- **Regression test:** `tests/test_order_tool.py`,
+  `tests/test_abstention_actions.py`.
+
+---
+
+## Known limitations
+
+- **Retrieval is lexical.** TF-IDF cannot match paraphrases with zero token
+  overlap; sufficiency thresholds may abstain on unusual wording even though
+  an answer exists. A small local embedding model would fix this without
+  changing the architecture.
+- **English-only, US-format dates**, and the composer's sentence selection
+  is heuristic (regex-based directive filtering), not semantic.
+- **Session state is in-memory** — restarting the CLI forgets conversations;
+  no persistence or concurrency.
+- **Conflict detection covers known shapes** (return windows, product-care
+  signatures). Novel conflict patterns between future documents would need
+  new rules or an NLI-based checker.
+- **No identity verification** (per assignment scope): possessing an order
+  ID grants access to that order's safe fields.
+- **LLM phrasing layer is optional and lightly exercised** — the demo and
+  evaluation run fully deterministic. With a key set, phrasing failures
+  silently fall back to the deterministic answer by design.
+
+## What I would improve before production
+
+1. Swap TF-IDF for a local sentence-embedding index behind the same
+   retriever interface; add hybrid BM25 + vector scoring.
+2. Persist sessions (Redis/Postgres) with TTLs and PII-free storage.
+3. Replace rule-based conflict detection with an entailment/NLI pass over
+   candidate pairs, keeping rules as a cheap first stage.
+4. Structured JSON logs shipped to a log platform, with per-turn latency,
+   retrieval score distributions, and abstention-rate dashboards/alerts.
+5. Golden-question regression pack grown from real traffic, run in CI on
+   every PR; shadow-deploy new prompts/profiles against recorded sessions.
+6. Real authentication and order-ownership checks before exposing any order
+   detail.
+
+---
+
+## AI coding tools disclosure
+
+This project was built with heavy assistance from an AI coding agent
+(opencode CLI driving an LLM): scaffolding modules, writing tests and the
+evaluation harness, generating this README's structure, and producing the
+demo GIF script. All design decisions, review, and debugging were done
+interactively against the running code and the supplied corpus.
+
+**Example of an AI suggestion that was wrong:** an early AI-proposed chunker
+merged short adjacent sections to satisfy a minimum-chunk-size heuristic.
+It looked reasonable but silently corrupted citation provenance — chunks
+started citing impossible headings like *"Standard return window > Item
+condition > Return shipping"*. Caught by manually inspecting debug traces,
+fixed with atomic per-section chunks, and pinned by
+`tests/test_retrieval_precedence.py` (Bug diary #1).
+
+**Example of an incomplete AI suggestion:** the initial conflict rule ("flag
+any two different day-counts") passed the visible conflict case but also
+fired on the 7-day damage-reporting window and delegation sentences,
+producing false conflicts (Bug diary #2). Precision had to come from
+restricting document scope and adding delegation markers.
+
+---
+
+## Repository layout
 
 ```text
 .
 ├── README.md
-├── knowledge-base/
-│   ├── 01-returns-policy-current.md
-│   ├── 02-returns-policy-legacy.md
-│   ├── 03-final-sale-and-promotions.md
-│   ├── 04-damaged-or-wrong-items.md
-│   ├── 05-domestic-shipping.md
-│   ├── 06-international-shipping.md
-│   ├── 07-warranty.md
-│   ├── 08-order-changes-and-cancellations.md
-│   ├── 09-trailplus-membership.md
-│   ├── 10-gift-cards-and-price-adjustments.md
-│   ├── 11-product-care.md
-│   ├── 12-breeze-tumbler-product-card.md
-│   ├── 13-support-escalation.md
-│   └── 14-internal-content-migration-notes.md
-├── data/
-│   ├── orders.json
-│   └── orders-data-dictionary.md
-└── evaluation/
-    └── visible-cases.json
+├── cli.py                     # interactive CLI (--debug, --session)
+├── web/
+│   ├── server.py              # stdlib HTTP API + static file server
+│   ├── static/                # index.html, styles.css, app.js (no build step)
+│   └── acceptance.py          # 36-check UI acceptance battery (real API)
+├── .env.example               # config template, no real credentials
+├── requirements-dev.txt       # pytest
+├── agent/
+│   ├── config.py              # profiles + env loading
+│   ├── contracts.py           # dataclasses shared across modules
+│   ├── documents.py           # front-matter parsing, corpus loading
+│   ├── chunking.py            # atomic per-section chunking
+│   ├── indexing.py            # TF-IDF index, normalization, aliases
+│   ├── precedence.py          # authority gates, supersession, pooling
+│   ├── conflicts.py           # genuine-conflict detection
+│   ├── orders.py              # order lookup tool (validation/sanitizing)
+│   ├── redaction.py           # log scrubbing
+│   ├── resolver.py            # follow-up resolution
+│   ├── sessions.py            # per-session state
+│   ├── composer.py            # deterministic grounded composition
+│   ├── llm.py                 # optional OpenAI-compatible phrasing
+│   └── agent.py               # orchestrator
+├── evaluation/
+│   ├── visible-cases.json     # supplied cases (unmodified inputs)
+│   ├── cases_original.json    # 14 original cases
+│   ├── assertions.py          # deterministic assertion library
+│   ├── run.py                 # runner (per-case + category report)
+│   └── results/               # baseline.json, final.json
+├── tests/                     # 78 pytest regression tests (backend + web API)
+├── scripts/
+│   ├── make_demo_gif.py       # CLI demo frames
+│   └── capture_web_demo.py    # captures docs/demo.gif from the live web UI
+├── knowledge-base/            # 14 supplied Markdown docs (unmodified)
+└── data/                      # supplied orders.json + dictionary (unmodified)
 ```
 
-Good luck. Build for reliability, not just for the happy-path demo.
+Supplied files under `knowledge-base/`, `data/`, and
+`evaluation/visible-cases.json` were not modified; derived behavior lives
+entirely in code.
