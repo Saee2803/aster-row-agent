@@ -12,7 +12,14 @@ assembled from retrieved evidence sentences, never generated prose. An
 optional LLM layer can rephrase the already-grounded answer, but tool calls,
 document precedence, conflict detection, and abstention always stay in code.
 
-![Demo](docs/demo.gif)
+## Demo
+
+![Architecture](Architecture.png)
+
+<video controls width="100%" poster="Architecture.png">
+  <source src="Assignmnt.mp4" type="video/mp4" />
+  Your browser does not support the video tag.
+</video>
 
 ---
 
@@ -77,25 +84,25 @@ python web/acceptance.py --url http://127.0.0.1:8000   # 36/36 checks
 Copy `.env.example` to `.env` if you want to customize. All values are
 optional; nothing real is committed.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `AGENT_PROFILE` | `full` | `full` = precedence + conflict detection + context resolution; `naive` = baseline profile used for the baseline evaluation below |
-| `LLM_API_KEY` | *(empty)* | Enables LLM phrasing when set together with the two vars below |
-| `LLM_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible `/chat/completions` endpoint |
-| `LLM_MODEL` | `gpt-4o-mini` | Model used for phrasing only |
-| `LLM_TIMEOUT_SECONDS` | `45` | Phrasing call timeout; on failure the deterministic answer is returned |
-| `AGENT_DEBUG` | `0` | `1` = same as `--debug` |
+| Variable              | Default                     | Purpose                                                                                                                          |
+| --------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_PROFILE`       | `full`                      | `full` = precedence + conflict detection + context resolution; `naive` = baseline profile used for the baseline evaluation below |
+| `LLM_API_KEY`         | _(empty)_                   | Enables LLM phrasing when set together with the two vars below                                                                   |
+| `LLM_BASE_URL`        | `https://api.openai.com/v1` | Any OpenAI-compatible `/chat/completions` endpoint                                                                               |
+| `LLM_MODEL`           | `gpt-4o-mini`               | Model used for phrasing only                                                                                                     |
+| `LLM_TIMEOUT_SECONDS` | `45`                        | Phrasing call timeout; on failure the deterministic answer is returned                                                           |
+| `AGENT_DEBUG`         | `0`                         | `1` = same as `--debug`                                                                                                          |
 
 ---
 
 ## Design choices
 
-| Concern | Choice | Why |
-|---|---|---|
-| Model | Deterministic grounded composer (default); optional OpenAI-compatible LLM for phrasing via stdlib `urllib` | Reliability first: every claim is selected from retrieved evidence. The LLM can only rephrase text that was already grounded |
+| Concern                | Choice                                                                                                                                               | Why                                                                                                                                |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Model                  | Deterministic grounded composer (default); optional OpenAI-compatible LLM for phrasing via stdlib `urllib`                                           | Reliability first: every claim is selected from retrieved evidence. The LLM can only rephrase text that was already grounded       |
 | Embeddings / retrieval | Local TF-IDF over section chunks with cosine similarity, plus suffix normalization (`ships → ship`) and alias canonicalization (`canadian → canada`) | Zero infrastructure, reproducible scores, good enough for a 14-document corpus; precedence filtering matters more than recall here |
-| Framework | Python standard library only | Fewer moving parts; every behavior is inspectable and testable |
-| Storage | In-memory index built at startup from `knowledge-base/`; sessions in memory keyed by session id | Corpus is tiny and static; no DB to deploy |
+| Framework              | Python standard library only                                                                                                                         | Fewer moving parts; every behavior is inspectable and testable                                                                     |
+| Storage                | In-memory index built at startup from `knowledge-base/`; sessions in memory keyed by session id                                                      | Corpus is tiny and static; no DB to deploy                                                                                         |
 
 ---
 
@@ -140,7 +147,7 @@ Key mechanisms:
   dropped, superseded documents are shadowed by their successors
   (RET-2024-01 → RET-2026-01), customer-service-facing docs outrank
   ops-facing ones, and no more than 3 chunks come from one document.
-- **Conflicts are surfaced, not hidden.** When two *current authoritative*
+- **Conflicts are surfaced, not hidden.** When two _current authoritative_
   sources disagree (the Breeze Tumbler care conflict:
   CARE-2026-01 vs PROD-BREEZE-20; or return-window divergence between
   RET-2026-01 / MEM-2026-01), both sides are quoted with citations and the
@@ -155,7 +162,7 @@ Key mechanisms:
   or secrets are refused; requests for other customers' data are declined.
 - **Fail closed.** Insufficient evidence → explicit abstention + handoff.
   Unfulfillable actions (refunds, cancellations, address changes) are never
-  promised; the agent explains what it *cannot* do and recommends a human.
+  promised; the agent explains what it _cannot_ do and recommends a human.
 
 ---
 
@@ -180,19 +187,19 @@ Baseline = same code with `AGENT_PROFILE=naive` (retrieval-only responder:
 no precedence gating, no conflict detection, no follow-up resolution).
 Final = default `full` profile.
 
-| Category | Baseline (naive) | Final (full) |
-|---|---|---|
-| Action safety | 2/2 | 2/2 |
-| Groundedness | 1/5 | **5/5** |
-| Multi-turn | 1/3 | **3/3** |
-| Privacy | 2/2 | 2/2 |
-| Prompt-injection safety | 2/3 | **3/3** |
-| Retrieval & precedence | 0/2 | **2/2** |
-| Safe abstention | 0/2 | **2/2** |
-| Source precedence & conflict | 0/2 | **2/2** |
-| Tool reliability | 5/5 | 5/5 |
-| Tool use | 3/3 | 3/3 |
-| **Overall** | **16/29 (55%)** | **29/29 (100%)** |
+| Category                     | Baseline (naive) | Final (full)     |
+| ---------------------------- | ---------------- | ---------------- |
+| Action safety                | 2/2              | 2/2              |
+| Groundedness                 | 1/5              | **5/5**          |
+| Multi-turn                   | 1/3              | **3/3**          |
+| Privacy                      | 2/2              | 2/2              |
+| Prompt-injection safety      | 2/3              | **3/3**          |
+| Retrieval & precedence       | 0/2              | **2/2**          |
+| Safe abstention              | 0/2              | **2/2**          |
+| Source precedence & conflict | 0/2              | **2/2**          |
+| Tool reliability             | 5/5              | 5/5              |
+| Tool use                     | 3/3              | 3/3              |
+| **Overall**                  | **16/29 (55%)**  | **29/29 (100%)** |
 
 Full per-case output: `evaluation/results/baseline.json` and
 `evaluation/results/final.json`.
@@ -205,9 +212,10 @@ Six real failures found while building (and probing beyond the visible case
 wording). Each is pinned by a regression test.
 
 ### 1. Chunker corrupted citation headings
+
 - **Reproduction:** asked about return shipping conditions; the cited heading
-  rendered as a mash-up like *"Standard return window > Item condition >
-  Return shipping"* — three headings glued into one chunk lineage.
+  rendered as a mash-up like _"Standard return window > Item condition >
+  Return shipping"_ — three headings glued into one chunk lineage.
 - **Root cause:** an early chunker merged short adjacent sections to hit a
   minimum-size target, which destroyed heading provenance.
 - **Fix:** chunks are atomic per `##` section; the document H1 is kept as
@@ -216,20 +224,22 @@ wording). Each is pinned by a regression test.
   headings exactly match sections of the source outline.
 
 ### 2. Conflict detector false-fired on unrelated day-counts
+
 - **Reproduction:** a question about damaged items claimed the returns
-  policy "conflicts" because OPS-2026-04 has a *7-day damage reporting*
+  policy "conflicts" because OPS-2026-04 has a _7-day damage reporting_
   window; TrailPlus membership text also triggered it via delegation.
 - **Root cause:** the rule compared any two "N days" numbers across
   documents instead of restricting to actual return-window statements.
 - **Fix:** the generic window-divergence rule only considers documents whose
   IDs can state return windows (`RET-2026-01`, `RET-2024-01`,
-  `MEM-2026-01`), and texts that merely *defer* to the returns policy carry
+  `MEM-2026-01`), and texts that merely _defer_ to the returns policy carry
   delegation markers that opt them out.
 - **Regression test:** `tests/test_conflicts_groundedness.py`.
 
 ### 3. Retrieval missed international shipping ("internationally", "Canada")
-- **Reproduction:** *"Do you ship internationally?"* ranked doc 06 too low;
-  *"What about Canada?"* found nothing.
+
+- **Reproduction:** _"Do you ship internationally?"_ ranked doc 06 too low;
+  _"What about Canada?"_ found nothing.
 - **Root cause:** plain tokenization — `international` vs `internationally`,
   `ship` vs `ships`, `canadian` vs `canada` never matched index terms.
 - **Fix:** suffix normalization plus an alias map in `agent/indexing.py`
@@ -237,6 +247,7 @@ wording). Each is pinned by a regression test.
 - **Regression test:** `tests/test_retrieval_precedence.py`.
 
 ### 4. Log redaction clobbered its own metadata
+
 - **Reproduction:** with `--debug`, after any order lookup the trace showed
   the tool name itself redacted: `{"name": "[REDACTED]"}` — traces useless.
 - **Root cause:** the sensitive-key list included bare `"name"`; tool-call
@@ -246,8 +257,9 @@ wording). Each is pinned by a regression test.
 - **Regression test:** `tests/test_observability.py`.
 
 ### 5. Mixed questions routed as pure order lookups
-- **Reproduction (beyond visible wording):** *"What is my return policy for
-  ORD-1009?"* answered only with delivery status; the policy half vanished.
+
+- **Reproduction (beyond visible wording):** _"What is my return policy for
+  ORD-1009?"_ answered only with delivery status; the policy half vanished.
 - **Root cause:** intent routing treated any message containing an order ID
   as a lookup-only turn.
 - **Fix:** mixed-flow detection routes the message through both the KB flow
@@ -255,7 +267,8 @@ wording). Each is pinned by a regression test.
 - **Regression test:** `tests/test_multiturn.py`.
 
 ### 6. Return-window math applied to already-returned orders
-- **Reproduction:** *"Can I return ORD-1008?"* computed days-since-delivery
+
+- **Reproduction:** _"Can I return ORD-1008?"_ computed days-since-delivery
   eligibility even though the order status is `returned`.
 - **Root cause:** the eligibility composer assumed an active delivered
   order; status precedence existed for stale fields but not here.
@@ -305,15 +318,15 @@ wording). Each is pinned by a regression test.
 
 This project was built with heavy assistance from an AI coding agent
 (opencode CLI driving an LLM): scaffolding modules, writing tests and the
-evaluation harness, generating this README's structure, and producing the
-demo GIF script. All design decisions, review, and debugging were done
-interactively against the running code and the supplied corpus.
+evaluation harness, and generating this README's structure. All design
+decisions, review, and debugging were done interactively against the
+running code and the supplied corpus.
 
 **Example of an AI suggestion that was wrong:** an early AI-proposed chunker
 merged short adjacent sections to satisfy a minimum-chunk-size heuristic.
 It looked reasonable but silently corrupted citation provenance — chunks
-started citing impossible headings like *"Standard return window > Item
-condition > Return shipping"*. Caught by manually inspecting debug traces,
+started citing impossible headings like _"Standard return window > Item
+condition > Return shipping"_. Caught by manually inspecting debug traces,
 fixed with atomic per-section chunks, and pinned by
 `tests/test_retrieval_precedence.py` (Bug diary #1).
 
@@ -359,9 +372,7 @@ restricting document scope and adding delegation markers.
 │   ├── run.py                 # runner (per-case + category report)
 │   └── results/               # baseline.json, final.json
 ├── tests/                     # 78 pytest regression tests (backend + web API)
-├── scripts/
-│   ├── make_demo_gif.py       # CLI demo frames
-│   └── capture_web_demo.py    # captures docs/demo.gif from the live web UI
+├── scripts/                   # helper scripts and local tooling
 ├── knowledge-base/            # 14 supplied Markdown docs (unmodified)
 └── data/                      # supplied orders.json + dictionary (unmodified)
 ```
