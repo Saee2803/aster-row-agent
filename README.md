@@ -16,10 +16,7 @@ document precedence, conflict detection, and abstention always stay in code.
 
 ![Architecture](Architecture.png)
 
-<video controls width="100%" poster="Architecture.png">
-  <source src="Assignmnt.mp4" type="video/mp4" />
-  Your browser does not support the video tag.
-</video>
+https://github.com/user-attachments/assets/9275a078-6fa9-4bcb-af78-9eb9a2fcb0e7
 
 ---
 
