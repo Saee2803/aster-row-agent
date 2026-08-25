@@ -14,8 +14,6 @@ document precedence, conflict detection, and abstention always stay in code.
 
 ## Demo
 
-![Architecture](Architecture.png)
-
 https://github.com/user-attachments/assets/9275a078-6fa9-4bcb-af78-9eb9a2fcb0e7
 
 ---
@@ -105,37 +103,7 @@ optional; nothing real is committed.
 
 ## Architecture
 
-```
-                ┌────────────────────────────────────────────────┐
- user turn ───▶ │ Session Manager (per-session state, isolation) │
-                └───────────────┬────────────────────────────────┘
-                                ▼
-                ┌────────────────────────────────────────────────┐
-                │ Orchestrator (SupportAgent)                    │
-                │  intent routing → smalltalk / KB / order /     │
-                │  privacy / action / injection refusal          │
-                └───┬───────────────┬───────────────┬────────────┘
-                    ▼               ▼               ▼
-      ┌───────────────────┐ ┌──────────────┐ ┌────────────────────┐
-      │ RAG Retriever     │ │ Order Lookup │ │ Safety resolvers   │
-      │ TF-IDF top-k pool │ │ Tool         │ │ privacy, prompt-   │
-      │ → precedence gate │ │ normalize ID │ │ injection, actions │
-      │ (active > legacy/ │ │ whitelist    │ │ (refuse or ask)    │
-      │  draft/internal), │ │ stale-field  │ └────────────────────┘
-      │ conflict detector,│ │ suppression, │
-      │ sufficiency check │ │ redaction    │
-      └─────────┬─────────┘ └──────┬───────┘
-                ▼                  ▼
-      ┌────────────────────────────────────────────────┐
-      │ Grounded Composer                              │
-      │ evidence sentences → answer (+ conflict note,  │
-      │ clarifying question, or handoff recommendation)│
-      │ [optional: LLM rephrases the grounded draft]   │
-      └─────────┬──────────────────────────────────────┘
-                ▼
-      Answer + Sources (file · heading · document_id)
-      + handoff flag        + sanitized debug trace
-```
+![Architecture](Architecture.png)
 
 Key mechanisms:
 
